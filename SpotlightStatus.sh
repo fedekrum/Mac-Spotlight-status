@@ -90,7 +90,13 @@ while true; do
             if [ -f "$CACHE" ] && [ "$(awk -v v="$vname" '$1==v {print $2}' "$CACHE")" != "" ]; then
                 tamanio=$(awk -v v="$vname" '$1==v {print $2}' "$CACHE")
             else
-                store="$vol/.Spotlight-V100"
+                # On APFS the system volume's index lives under
+                # /System/Volumes/Data/, not directly at the root.
+                if [ "$vol" = "/" ]; then
+                    store="/System/Volumes/Data/.Spotlight-V100"
+                else
+                    store="$vol/.Spotlight-V100"
+                fi
                 if [ -d "$store" ]; then
                     # du -sk returns KB (1024-byte blocks) on macOS.
                     kb=$(du -sk "$store" 2>/dev/null | awk '{print $1}')
