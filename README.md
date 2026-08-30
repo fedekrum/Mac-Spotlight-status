@@ -20,27 +20,78 @@ as you can check.
 sudo ./SpotlightStatus.sh
 ```
 
-It prints the overall status (`mdutil -s /`) and then keeps an eye on the files
-being indexed. It only prints when the state changes, to avoid flooding the
-screen while the same file is being processed. Press `Ctrl+C` to stop.
+While it runs you will see one of three things:
 
-When a file is being scanned it prints the volume and the file. When there is
-indexing activity but no user file is capturable at that instant, it prints a
-short `indexing...` line; when there is no activity at all, a `waiting...` line.
+- **A file** → Spotlight is currently scanning that file.
+- **`indexing...`** → there is indexing activity, but at that exact split
+  second no user file was open to capture (files open and close fast).
+- **`waiting...`** → no indexing activity at all right now.
+
+It only prints when the **state changes**, so it does not flood the screen
+while Spotlight stays on the same file. Press `Ctrl+C` to stop.
 
 Each file entry shows:
 - The volume and the current size of its Spotlight index (`.Spotlight-V100`).
 - The file (directory + name) currently being scanned.
 
-## How it works
+## How it works — what it does
 
-- `mdutil -s /` gives the general indexing state.
-- Spotlight does the heavy lifting with `mdworker_shared` processes. The script
-  samples the most active ones and, via `lsof`, shows the user file they have
-  open in read mode — that is the file being scanned right now.
-- The volume name comes from `diskutil` (e.g. "Macintosh HD"). The index size is
-  refreshed each printed round with `du -sk` on that volume's `.Spotlight-V100`
-  folder, so you can watch it grow while indexing.
+Spotlight tells you *"Indexing"*, but not **what** it is doing. This script
+sits behind Spotlight and shows you the actual file it is scanning, so you can
+tell it is moving forward and not stuck. It only **reads** process info and
+prints it — it does not touch, delete, or modify any file.
+
+## How it works — how it does it
+
+### Background
+
+Spotlight indexes through two kinds of processes:
+
+- `mds` / `mds_stores` — the metadata server keeping the index database.
+- `mdworker_shared` — workers that walk the disk and read each file to build
+  its metadata.
+
+When indexing, several `mdworker_shared` run at once, each holding an **open
+file descriptor** to the file it is currently reading. That descriptor tells us
+exactly which file is being scanned right now.
+
+### The loop
+
+Every `0.2` seconds the script repeats:
+
+1. **Make sure it runs as root** — `sudo lsof` and `du` on the index need
+   privileges, so if needed it re-launches with `sudo`. If there is no
+   `mds_stores`, indexing is not happening and it exits early.
+
+2. **Print the official status** — `mdutil -s /` shows whether indexing is on.
+
+3. **Find the active workers** — list processes, keep the `mdworker_shared`
+   ones. `LC_ALL=C` forces a dot as decimal separator in `%CPU`, which in
+   Spanish-locale Macs would otherwise be a comma and break sorting.
+
+4. **Find what file a worker is reading** — `sudo lsof` lists the worker's open
+   file descriptors. We keep those opened in read mode (`r`) on a regular file
+   (type `REG`) with a real path, then **discard the "infrastructure" ones**
+   (the index itself `.Spotlight-V100`, system libraries in `/usr` and
+   `/System`, `dyld`, `.csstore`, `/dev`). What's left is the **user file**
+   being scanned. The script tries the active workers in turn and keeps the
+   first one that has such a file open.
+
+5. **Build the status** — a real file, or `__INDEXING__` (workers active but no
+   capturable file), or `__IDLE__` (nothing active).
+
+6. **Print only if the status changed** — to avoid spam.
+
+7. **When printing a real file**, build the block:
+
+   - **Volume name** → derive the volume from the path (`/Users/...` is the
+     system volume; `/Volumes/<X>/...` is volume `<X>`). The real system name
+     (e.g. "Macintosh HD") comes from `diskutil`.
+   - **Index size** → `du -sk` on that volume's `.Spotlight-V100` folder,
+     formatted nicely. This only runs when we are about to print. On APFS the
+     system index lives at `/System/Volumes/Data/.Spotlight-V100`.
+   - **Relative path** → split the full path into the relative directory
+     (volume stripped) and the file name, then print the block.
 
 ## Example output
 
@@ -53,9 +104,9 @@ Each file entry shows:
  Press Ctrl+C to stop.
 ===========================================================
 
-[19:52:14] Volume: Macintosh HD | Index size: 3,4 GB
-Users/fede/Downloads/cheat0264 2/cheat/zx81_cass/
-fangamesp.xml
+[20:02:29] Volume: Macintosh HD | Index size: 3,6 GB
+Users/fede/Downloads/cheat0264/cheat/
+.DS_Store
 indexing... (no user file capturable right now)
 waiting... (no indexing activity right now)
 ```
