@@ -34,8 +34,9 @@ Each line pair shows:
 - Spotlight does the heavy lifting with `mdworker_shared` processes. The script
   picks the one using the most CPU and, via `lsof`, shows the user file it has
   open in read mode — that is the file being scanned right now.
-- The volume is derived from the file path, and the index size is read with
-  `du -sk` on that volume's `.Spotlight-V100` folder (cached per volume).
+- The volume is derived from the file path, and the index size is refreshed
+  each round with `du -sk` on that volume's `.Spotlight-V100` folder, so you
+  can watch it grow while indexing.
 
 ## Example output
 
