@@ -21,10 +21,14 @@ sudo ./SpotlightStatus.sh
 ```
 
 It prints the overall status (`mdutil -s /`) and then keeps an eye on the files
-being indexed. It only prints when the current file changes, to avoid flooding
-the screen while the same file is being processed. Press `Ctrl+C` to stop.
+being indexed. It only prints when the state changes, to avoid flooding the
+screen while the same file is being processed. Press `Ctrl+C` to stop.
 
-Each printed entry shows:
+When a file is being scanned it prints the volume and the file. When there is
+indexing activity but no user file is capturable at that instant, it prints a
+short `indexing...` line; when there is no activity at all, a `waiting...` line.
+
+Each file entry shows:
 - The volume and the current size of its Spotlight index (`.Spotlight-V100`).
 - The file (directory + name) currently being scanned.
 
@@ -32,11 +36,11 @@ Each printed entry shows:
 
 - `mdutil -s /` gives the general indexing state.
 - Spotlight does the heavy lifting with `mdworker_shared` processes. The script
-  picks the one using the most CPU and, via `lsof`, shows the user file it has
+  samples the most active ones and, via `lsof`, shows the user file they have
   open in read mode — that is the file being scanned right now.
-- The volume is derived from the file path, and the index size is refreshed
-  each round with `du -sk` on that volume's `.Spotlight-V100` folder, so you
-  can watch it grow while indexing.
+- The volume name comes from `diskutil` (e.g. "Macintosh HD"). The index size is
+  refreshed each printed round with `du -sk` on that volume's `.Spotlight-V100`
+  folder, so you can watch it grow while indexing.
 
 ## Example output
 
@@ -49,12 +53,11 @@ Each printed entry shows:
  Press Ctrl+C to stop.
 ===========================================================
 
-[19:06:54] Volume: Development | Index size: 4,0 GB
-PHP/qrvcard/phpqrcode/
-.DS_Store
-[19:06:55] Volume: Development | Index size: 4,0 GB
-PHP/qrvcard/phpqrcode/
-.DS_Store
+[19:52:14] Volume: Macintosh HD | Index size: 3,4 GB
+Users/fede/Downloads/cheat0264 2/cheat/zx81_cass/
+fangamesp.xml
+indexing... (no user file capturable right now)
+waiting... (no indexing activity right now)
 ```
 
 ## Disclaimer
