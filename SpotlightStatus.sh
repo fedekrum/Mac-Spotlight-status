@@ -63,6 +63,15 @@ volume_root() {
     esac
 }
 
+# Name of the system (root) volume, e.g. "Macintosh HD". Computed once.
+SYSVOL=""
+system_volume_name() {
+    if [ -z "$SYSVOL" ]; then
+        SYSVOL=$(diskutil info -plist / 2>/dev/null | awk -F'<string>|</string>' '/<key>VolumeName<\/key>/{getline; print $2}')
+    fi
+    echo "$SYSVOL"
+}
+
 # Loop to continuously show the current file being indexed.
 while true; do
     # Pick the mdworker_shared process burning the most CPU right now.
@@ -80,23 +89,29 @@ while true; do
 
         if [ -n "$archivo" ]; then
             vol=$(volume_root "$archivo")
-            vname="${vol#/Volumes/}"
-            [ "$vname" = "$vol" ] && vname="System"
+            if [ "$vol" = "/" ]; then
+                vname=$(system_volume_name)
+            else
+                vname="${vol#/Volumes/}"
+            fi
 
             # Size of the index store on that volume. du -s can be slow, so we
-            # use a simple cache file (bash 3.2 has no associative arrays).
+            # use a simple cache file keyed by the store path (bash 3.2 has no
+            # associative arrays, and volume names can contain spaces).
             CACHE=/tmp/.spotlight-status-cache
-            tamanio=""
-            if [ -f "$CACHE" ] && [ "$(awk -v v="$vname" '$1==v {print $2}' "$CACHE")" != "" ]; then
-                tamanio=$(awk -v v="$vname" '$1==v {print $2}' "$CACHE")
+
+            # On APFS the system volume's index lives under
+            # /System/Volumes/Data/, not directly at the root.
+            if [ "$vol" = "/" ]; then
+                store="/System/Volumes/Data/.Spotlight-V100"
             else
-                # On APFS the system volume's index lives under
-                # /System/Volumes/Data/, not directly at the root.
-                if [ "$vol" = "/" ]; then
-                    store="/System/Volumes/Data/.Spotlight-V100"
-                else
-                    store="$vol/.Spotlight-V100"
-                fi
+                store="$vol/.Spotlight-V100"
+            fi
+
+            tamanio=""
+            if [ -f "$CACHE" ] && [ "$(awk -F$'\t' -v s="$store" '$1==s {print $2}' "$CACHE")" != "" ]; then
+                tamanio=$(awk -F$'\t' -v s="$store" '$1==s {print $2}' "$CACHE")
+            else
                 if [ -d "$store" ]; then
                     # du -sk returns KB (1024-byte blocks) on macOS.
                     kb=$(du -sk "$store" 2>/dev/null | awk '{print $1}')
@@ -104,7 +119,7 @@ while true; do
                 else
                     tamanio="0 B"
                 fi
-                awk -v v="$vname" -v s="$tamanio" 'BEGIN{print v, s}' >> "$CACHE"
+                printf '%s\t%s\n' "$store" "$tamanio" >> "$CACHE"
             fi
 
             # Split path into relative directory and file name.
