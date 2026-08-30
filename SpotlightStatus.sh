@@ -95,11 +95,9 @@ while true; do
                 vname="${vol#/Volumes/}"
             fi
 
-            # Size of the index store on that volume. du -s can be slow, so we
-            # use a simple cache file keyed by the store path (bash 3.2 has no
-            # associative arrays, and volume names can contain spaces).
-            CACHE=/tmp/.spotlight-status-cache
-
+            # Size of the index store on that volume, recomputed on every round
+            # so you can watch it grow while indexing. du on the index folder is
+            # cheap (~6ms) because it only walks the index metadata.
             # On APFS the system volume's index lives under
             # /System/Volumes/Data/, not directly at the root.
             if [ "$vol" = "/" ]; then
@@ -109,17 +107,12 @@ while true; do
             fi
 
             tamanio=""
-            if [ -f "$CACHE" ] && [ "$(awk -F$'\t' -v s="$store" '$1==s {print $2}' "$CACHE")" != "" ]; then
-                tamanio=$(awk -F$'\t' -v s="$store" '$1==s {print $2}' "$CACHE")
+            if [ -d "$store" ]; then
+                # du -sk returns KB (1024-byte blocks) on macOS.
+                kb=$(du -sk "$store" 2>/dev/null | awk '{print $1}')
+                tamanio=$(human_size $((kb * 1024)))
             else
-                if [ -d "$store" ]; then
-                    # du -sk returns KB (1024-byte blocks) on macOS.
-                    kb=$(du -sk "$store" 2>/dev/null | awk '{print $1}')
-                    tamanio=$(human_size $((kb * 1024)))
-                else
-                    tamanio="0 B"
-                fi
-                printf '%s\t%s\n' "$store" "$tamanio" >> "$CACHE"
+                tamanio="0 B"
             fi
 
             # Split path into relative directory and file name.
