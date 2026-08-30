@@ -73,6 +73,7 @@ system_volume_name() {
 }
 
 # Loop to continuously show the current file being indexed.
+ultimo_archivo=""
 while true; do
     # Pick the mdworker_shared process burning the most CPU right now.
     # (%CPU can use a comma decimal in some locales -> normalize to a dot first.)
@@ -124,10 +125,15 @@ while true; do
             fi
             base=$(basename "$archivo")
 
-            echo
-            echo "[$(date +%H:%M:%S)] Volume: $vname | Index size: $tamanio"
-            echo "$sub/"
-            echo "$base"
+            # Only print when the current file changed since the last round.
+            if [ "$archivo" != "$ultimo_archivo" ]; then
+                ultimo_archivo="$archivo"
+
+                echo
+                echo "[$(date +%H:%M:%S)] Volume: $vname | Index size: $tamanio"
+                echo "$sub/"
+                echo "$base"
+            fi
         fi
     fi
 

@@ -20,11 +20,11 @@ as you can check.
 sudo ./SpotlightStatus.sh
 ```
 
-It prints the overall status (`mdutil -s /`) and then keeps showing, for each
-file being indexed, the volume it belongs to and that volume's index size.
-Press `Ctrl+C` to stop.
+It prints the overall status (`mdutil -s /`) and then keeps an eye on the files
+being indexed. It only prints when the current file changes, to avoid flooding
+the screen while the same file is being processed. Press `Ctrl+C` to stop.
 
-Each line pair shows:
+Each printed entry shows:
 - The volume and the current size of its Spotlight index (`.Spotlight-V100`).
 - The file (directory + name) currently being scanned.
 
