@@ -37,10 +37,37 @@ echo " Press Ctrl+C to stop."
 echo "==========================================================="
 echo
 
+# Format a byte size in a friendly way, e.g. "1.8 GB", "512 MB".
+human_size() {
+    local bytes=$1
+    awk -v b="$bytes" '
+        BEGIN {
+            units[0]="B"; units[1]="KB"; units[2]="MB"; units[3]="GB"; units[4]="TB"
+            i=0
+            size=b
+            while (size >= 1024 && i < 4) { size/=1024; i++ }
+            printf "%0.1f %s\n", size, units[i]
+        }'
+}
+
+# Given a path, returns the mounted volume root it belongs to.
+volume_root() {
+    case "$1" in
+        /Volumes/*)
+            local vol="${1#/Volumes/}"
+            echo "/Volumes/${vol%%/*}"
+            ;;
+        *)
+            echo "/"
+            ;;
+    esac
+}
+
 # Loop to continuously show the current file being indexed.
 while true; do
     # Pick the mdworker_shared process burning the most CPU right now.
-    pid=$(ps -A -o pid=,pcpu=,comm= | awk '$3 ~ /mdworker_shared/ {print $2, $1}' \
+    # (%CPU can use a comma decimal in some locales -> normalize to a dot first.)
+    pid=$(ps -A -o pid=,pcpu=,comm= | awk '$3 ~ /mdworker_shared/ {gsub(",",".",$2); print $2, $1}' \
         | sort -rn | head -1 | awk '{print $2}')
 
     if [ -n "$pid" ]; then
@@ -48,11 +75,45 @@ while true; do
         # store, not system libs), that's the file being scanned/indexed.
         archivo=$(sudo lsof -p "$pid" 2>/dev/null \
             | awk '$4 ~ /r/ && $5=="REG" && $NF ~ /^\//' \
-            | grep -vE '/\.Spotlight-V100|/usr/(lib|share)|/System/|dyld$|\.csstore|\.DS_Store' \
+            | grep -vE '/\.Spotlight-V100|/usr/(lib|share)|/System/|dyld$|\.csstore' \
             | tail -1 | awk '{print $NF}')
 
         if [ -n "$archivo" ]; then
-            echo "[$(date +%H:%M:%S)] $archivo"
+            vol=$(volume_root "$archivo")
+            vname="${vol#/Volumes/}"
+            [ "$vname" = "$vol" ] && vname="System"
+
+            # Size of the index store on that volume. du -s can be slow, so we
+            # use a simple cache file (bash 3.2 has no associative arrays).
+            CACHE=/tmp/.spotlight-status-cache
+            tamanio=""
+            if [ -f "$CACHE" ] && [ "$(awk -v v="$vname" '$1==v {print $2}' "$CACHE")" != "" ]; then
+                tamanio=$(awk -v v="$vname" '$1==v {print $2}' "$CACHE")
+            else
+                store="$vol/.Spotlight-V100"
+                if [ -d "$store" ]; then
+                    # du -sk returns KB (1024-byte blocks) on macOS.
+                    kb=$(du -sk "$store" 2>/dev/null | awk '{print $1}')
+                    tamanio=$(human_size $((kb * 1024)))
+                else
+                    tamanio="0 B"
+                fi
+                awk -v v="$vname" -v s="$tamanio" 'BEGIN{print v, s}' >> "$CACHE"
+            fi
+
+            # Split path into relative directory and file name.
+            dir=$(dirname "$archivo")
+            if [ "$vol" = "/" ]; then
+                sub="${dir#/}"
+            else
+                sub="${dir#${vol}/}"
+            fi
+            base=$(basename "$archivo")
+
+            echo
+            echo "[$(date +%H:%M:%S)] Volume: $vname | Index size: $tamanio"
+            echo "$sub/"
+            echo "$base"
         fi
     fi
 

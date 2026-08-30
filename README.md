@@ -20,8 +20,13 @@ as you can check.
 sudo ./SpotlightStatus.sh
 ```
 
-It prints the overall status (`mdutil -s /`) and then keeps showing the file
-that is being indexed, refreshing every second. Press `Ctrl+C` to stop.
+It prints the overall status (`mdutil -s /`) and then keeps showing, for each
+file being indexed, the volume it belongs to and that volume's index size.
+Press `Ctrl+C` to stop.
+
+Each line pair shows:
+- The volume and the current size of its Spotlight index (`.Spotlight-V100`).
+- The file (directory + name) currently being scanned.
 
 ## How it works
 
@@ -29,6 +34,8 @@ that is being indexed, refreshing every second. Press `Ctrl+C` to stop.
 - Spotlight does the heavy lifting with `mdworker_shared` processes. The script
   picks the one using the most CPU and, via `lsof`, shows the user file it has
   open in read mode — that is the file being scanned right now.
+- The volume is derived from the file path, and the index size is read with
+  `du -sk` on that volume's `.Spotlight-V100` folder (cached per volume).
 
 ## Example output
 
@@ -41,9 +48,12 @@ that is being indexed, refreshing every second. Press `Ctrl+C` to stop.
  Press Ctrl+C to stop.
 ===========================================================
 
-[18:45:38] /Volumes/Development/PHP/demo/vendor/swiftmailer/swiftmailer/tests/_samples/smime/encrypt2.key
-[18:45:39] /Volumes/Development/PHP/demo/vendor/swiftmailer/swiftmailer/tests/_samples/smime/encrypt2.key
-[18:45:40] /Volumes/Development/PHP/demo/vendor/swiftmailer/swiftmailer/tests/_samples/smime/encrypt2.key
+[19:06:54] Volume: Development | Index size: 4,0 GB
+PHP/qrvcard/phpqrcode/
+.DS_Store
+[19:06:55] Volume: Development | Index size: 4,0 GB
+PHP/qrvcard/phpqrcode/
+.DS_Store
 ```
 
 ## Disclaimer
