@@ -75,20 +75,31 @@ system_volume_name() {
 # Loop to continuously show the current file being indexed.
 ultimo_archivo=""
 while true; do
-    # Pick the mdworker_shared process burning the most CPU right now.
-    # (%CPU can use a comma decimal in some locales -> normalize to a dot first.)
-    pid=$(ps -A -o pid=,pcpu=,comm= | awk '$3 ~ /mdworker_shared/ {gsub(",",".",$2); print $2, $1}' \
-        | sort -rn | head -1 | awk '{print $2}')
+    # mdworker_shared processes burning the most CPU right now. Force the C
+    # locale so %CPU always uses a dot as decimal separator (some locales use a
+    # comma, which would break the numeric sort).
+    pids=$(LC_ALL=C ps -A -o pid=,pcpu=,comm= \
+        | awk '$3 ~ /mdworker_shared/ {print $1}' \
+        | head -4)
 
-    if [ -n "$pid" ]; then
-        # Oldest fd open in read mode on a regular file of the user (not the index
-        # store, not system libs), that's the file being scanned/indexed.
-        archivo=$(sudo lsof -p "$pid" 2>/dev/null \
-            | awk '$4 ~ /r/ && $5=="REG" && $NF ~ /^\//' \
-            | grep -vE '/\.Spotlight-V100|/usr/(lib|share)|/System/|dyld$|\.csstore' \
-            | tail -1 | awk '{print $NF}')
+    archivo=""
+    for pid in $pids; do
+        # Latest fd open in read mode on a regular user file (not the index
+        # store, not system libs): that's the file being scanned/indexed.
+        # The name is extracted from column 9 onward so paths with spaces are
+        # kept intact.
+        a=$(sudo lsof -p "$pid" 2>/dev/null \
+            | awk '$4 ~ /r/ && $5=="REG" && $9 ~ /^\//' \
+            | grep -vE '/\.Spotlight-V100|/usr/(lib|share)|/System/|dyld$|\.csstore|/dev/' \
+            | awk '{sub(/^([^ ]+ +){8}/,""); print}' \
+            | tail -1)
+        if [ -n "$a" ]; then
+            archivo="$a"
+            break
+        fi
+    done
 
-        if [ -n "$archivo" ]; then
+    if [ -n "$archivo" ]; then
             # Only do any work (and only print) when the file changed since the
             # last round. If it is the same file, do nothing at all.
             if [ "$archivo" != "$ultimo_archivo" ]; then
@@ -136,7 +147,6 @@ while true; do
                 echo "$base"
             fi
         fi
-    fi
 
-    sleep 1
+    sleep 0.2
 done
