@@ -82,12 +82,10 @@ while true; do
         | awk '$3 ~ /mdworker_shared/ {print $1}' \
         | head -4)
 
+    # Detect the user file being scanned right now, from the first mdworker
+    # that has a real (non-infrastructure) file open.
     archivo=""
     for pid in $pids; do
-        # Latest fd open in read mode on a regular user file (not the index
-        # store, not system libs): that's the file being scanned/indexed.
-        # The name is extracted from column 9 onward so paths with spaces are
-        # kept intact.
         a=$(sudo lsof -p "$pid" 2>/dev/null \
             | awk '$4 ~ /r/ && $5=="REG" && $9 ~ /^\//' \
             | grep -vE '/\.Spotlight-V100|/usr/(lib|share)|/System/|dyld$|\.csstore|/dev/' \
@@ -99,54 +97,70 @@ while true; do
         fi
     done
 
+    # Build the current status: either the file, or an activity indicator so
+    # the screen never looks silently frozen.
     if [ -n "$archivo" ]; then
-            # Only do any work (and only print) when the file changed since the
-            # last round. If it is the same file, do nothing at all.
-            if [ "$archivo" != "$ultimo_archivo" ]; then
-                ultimo_archivo="$archivo"
+        estado="$archivo"
+    elif [ -n "$pids" ]; then
+        estado="__INDEXING__"
+    else
+        estado="__IDLE__"
+    fi
 
-                vol=$(volume_root "$archivo")
-                if [ "$vol" = "/" ]; then
-                    vname=$(system_volume_name)
-                else
-                    vname="${vol#/Volumes/}"
-                fi
+    # Only do any work (and only print) when the status changed.
+    if [ "$estado" != "$ultimo_archivo" ]; then
+        ultimo_archivo="$estado"
 
-                # Size of the index store on that volume. Only computed when we
-                # are going to print. du on the index folder is cheap (~6ms)
-                # because it only walks the index metadata.
-                # On APFS the system volume's index lives under
-                # /System/Volumes/Data/, not directly at the root.
-                if [ "$vol" = "/" ]; then
-                    store="/System/Volumes/Data/.Spotlight-V100"
-                else
-                    store="$vol/.Spotlight-V100"
-                fi
-
-                tamanio=""
-                if [ -d "$store" ]; then
-                    # du -sk returns KB (1024-byte blocks) on macOS.
-                    kb=$(du -sk "$store" 2>/dev/null | awk '{print $1}')
-                    tamanio=$(human_size $((kb * 1024)))
-                else
-                    tamanio="0 B"
-                fi
-
-                # Split path into relative directory and file name.
-                dir=$(dirname "$archivo")
-                if [ "$vol" = "/" ]; then
-                    sub="${dir#/}"
-                else
-                    sub="${dir#${vol}/}"
-                fi
-                base=$(basename "$archivo")
-
-                echo
-                echo "[$(date +%H:%M:%S)] Volume: $vname | Index size: $tamanio"
-                echo "$sub/"
-                echo "$base"
+        if [ "$estado" = "__INDEXING__" ]; then
+            echo
+            echo "indexing... (no user file capturable right now)"
+        elif [ "$estado" = "__IDLE__" ]; then
+            echo
+            echo "waiting... (no indexing activity right now)"
+        else
+            archivo="$estado"
+            vol=$(volume_root "$archivo")
+            if [ "$vol" = "/" ]; then
+                vname=$(system_volume_name)
+            else
+                vname="${vol#/Volumes/}"
             fi
+
+            # Size of the index store on that volume. Only computed when we
+            # are going to print. du on the index folder is cheap (~6ms)
+            # because it only walks the index metadata.
+            # On APFS the system volume's index lives under
+            # /System/Volumes/Data/, not directly at the root.
+            if [ "$vol" = "/" ]; then
+                store="/System/Volumes/Data/.Spotlight-V100"
+            else
+                store="$vol/.Spotlight-V100"
+            fi
+
+            tamanio=""
+            if [ -d "$store" ]; then
+                # du -sk returns KB (1024-byte blocks) on macOS.
+                kb=$(du -sk "$store" 2>/dev/null | awk '{print $1}')
+                tamanio=$(human_size $((kb * 1024)))
+            else
+                tamanio="0 B"
+            fi
+
+            # Split path into relative directory and file name.
+            dir=$(dirname "$archivo")
+            if [ "$vol" = "/" ]; then
+                sub="${dir#/}"
+            else
+                sub="${dir#${vol}/}"
+            fi
+            base=$(basename "$archivo")
+
+            echo
+            echo "[$(date +%H:%M:%S)] Volume: $vname | Index size: $tamanio"
+            echo "$sub/"
+            echo "$base"
         fi
+    fi
 
     sleep 0.2
 done
